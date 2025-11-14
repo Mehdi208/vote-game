@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Qui est ton candidat ?</title>
+
+<style>
+    body {
+        margin: 0;
+        background: #000;
+        font-family: 'Poppins', sans-serif;
+        color: white;
+        overflow: hidden;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+    }
+
+    #cards {
+        position: relative;
+        width: 320px;
+        height: 480px;
+    }
+
+    .card {
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        border-radius: 20px;
+        background: #111;
+        border: 2px solid rgba(255,255,255,0.1);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        font-size: 1.8rem;
+        font-weight: 700;
+        transition: 0.2s;
+        user-select: none;
+        text-align: center;
+        padding: 20px;
+    }
+
+    .mehdi {
+        background: linear-gradient(135deg,#ff0050,#00f2ea);
+    }
+
+    .tiemele {
+        background: #222;
+    }
+
+    #resultBox {
+        display: none;
+        text-align: center;
+        animation: fadeIn 0.7s ease;
+    }
+
+    @keyframes fadeIn {
+        from {opacity:0; transform: translateY(20px);}
+        to {opacity:1; transform: translateY(0);}
+    }
+
+    .btn {
+        padding: 15px 20px;
+        margin-top: 20px;
+        border: none;
+        background: #ff0050;
+        color: white;
+        font-weight: 600;
+        font-size: 1.1rem;
+        border-radius: 12px;
+        cursor: pointer;
+    }
+
+    /* SCOREBOARD */
+    #scoreboard {
+        margin-top: 25px;
+        text-align: left;
+    }
+
+    .score-item {
+        margin-top: 10px;
+    }
+
+    .score-label {
+        font-size: 1rem;
+        margin-bottom: 4px;
+    }
+
+    .score-bar {
+        height: 14px;
+        border-radius: 10px;
+        background: #222;
+        overflow: hidden;
+        border: 1px solid #444;
+    }
+
+    .score-fill {
+        height: 100%;
+        width: 0%;
+        transition: 0.4s ease;
+    }
+
+    .mehdi-bar { background: linear-gradient(90deg,#ff0050,#ff7db8); }
+    .tiemele-bar { background: linear-gradient(90deg,#00f2ea,#008c99); }
+
+    canvas {
+        position: fixed;
+        top: 0;
+        left: 0;
+        pointer-events: none;
+    }
+</style>
+</head>
+<body>
+
+<canvas id="confetti"></canvas>
+
+<div id="cards">
+    <div class="card mehdi" id="card1">Swipe → pour Méhdi</div>
+    <div class="card tiemele" id="card2">← Swipe pour Tiémélé</div>
+</div>
+
+<div id="resultBox">
+    <h1 id="resultText"></h1>
+
+    <div id="scoreboard">
+        <div class="score-item">
+            <div class="score-label">Méhdi : <span id="scoreMehdi">0</span></div>
+            <div class="score-bar"><div class="score-fill mehdi-bar" id="barMehdi"></div></div>
+        </div>
+
+        <div class="score-item">
+            <div class="score-label">Tiémélé : <span id="scoreTiemele">0</span></div>
+            <div class="score-bar"><div class="score-fill tiemele-bar" id="barTiemele"></div></div>
+        </div>
+    </div>
+
+    <button class="btn" onclick="restart()">Rejouer</button>
+</div>
+
+
+<script>
+// ----------------------------------------
+// 🔐 CONFIG
+// ----------------------------------------
+const API_KEY = "6916a63dae596e708f581455"; 
+const BIN_ID  = "$2a$10$DtdHtXn4oIeZ05RcNQViW.lrdsWQwl9OuDOG1ZAWlRWMXAY.YI9Mq";
+
+const API_URL = `https://api.jsonbin.io/v3/b/${BIN_ID}`;
+
+
+// ----------------------------------------
+// 🎉 CONFETTIS
+// ----------------------------------------
+const canvas = document.getElementById("confetti");
+const ctx = canvas.getContext("2d");
+canvas.width = innerWidth;
+canvas.height = innerHeight;
+
+let confettiPieces = [];
+
+function startConfetti() {
+    confettiPieces = [];
+    for (let i = 0; i < 120; i++) {
+        confettiPieces.push({
+            x: Math.random()*innerWidth,
+            y: Math.random()*innerHeight,
+            size: 8,
+            speed: Math.random()*4 + 2
+        });
+    }
+    canvas.style.display = "block";
+    animateConfetti();
+}
+
+function stopConfetti() {
+    canvas.style.display = "none";
+}
+
+function animateConfetti() {
+    ctx.clearRect(0,0,innerWidth,innerHeight);
+
+    confettiPieces.forEach((p,i)=>{
+        ctx.fillStyle = `hsl(${Math.random()*360},100%,50%)`;
+        ctx.fillRect(p.x,p.y,p.size,p.size);
+        p.y += p.speed;
+        if (p.y > innerHeight) p.y = -10;
+    });
+
+    requestAnimationFrame(animateConfetti);
+}
+
+
+// ----------------------------------------
+// 📌 SWIPE SYSTEM
+// ----------------------------------------
+const cards = document.getElementById("cards");
+let startX = 0;
+
+cards.addEventListener("touchstart", e => {
+    startX = e.touches[0].clientX;
+});
+
+cards.addEventListener("touchend", e => {
+    const endX = e.changedTouches[0].clientX;
+    const diff = endX - startX;
+
+    if (diff > 80) vote("Mehdi");      // Swipe Right
+    if (diff < -80) vote("Tiemele");   // Swipe Left
+
+    if (navigator.vibrate) navigator.vibrate(40);
+});
+
+
+// ----------------------------------------
+// 📊 VOTE SYSTEM + LIVE SCOREBOARD
+// ----------------------------------------
+async function loadScores() {
+    const res = await fetch(API_URL, {
+        headers: { "X-Master-Key": API_KEY }
+    });
+    const data = await res.json();
+    const scores = data.record;
+
+    const total = scores.Mehdi + scores.Tiemele;
+
+    document.getElementById("scoreMehdi").innerText = scores.Mehdi;
+    document.getElementById("scoreTiemele").innerText = scores.Tiemele;
+
+    document.getElementById("barMehdi").style.width = total ? (scores.Mehdi/total*100)+"%" : "0%";
+    document.getElementById("barTiemele").style.width = total ? (scores.Tiemele/total*100)+"%" : "0%";
+}
+
+async function vote(choice) {
+
+    // 1. Lire votes actuels
+    const res = await fetch(API_URL, {
+        headers: { "X-Master-Key": API_KEY }
+    });
+    const data = await res.json();
+    let votes = data.record;
+
+    // 2. Ajouter un vote
+    votes[choice]++;
+
+    // 3. Sauvegarder
+    await fetch(API_URL, {
+        method: "PUT",
+        headers: {
+            "Content-Type": "application/json",
+            "X-Master-Key": API_KEY
+        },
+        body: JSON.stringify(votes)
+    });
+
+    // 4. Affichage du résultat
+    showResult(choice);
+
+    // 5. Mise à jour en direct des scores
+    await loadScores();
+}
+
+function showResult(choice) {
+    document.getElementById("cards").style.display = "none";
+    const text = document.getElementById("resultText");
+    const box = document.getElementById("resultBox");
+
+    if (choice === "Mehdi") {
+        text.innerHTML = "🎉 Tu as choisi Méhdi et tu gagnes un déjeuner gratuit !";
+        startConfetti();
+    } else {
+        text.innerHTML = "❌ Tu as choisi Tiémélé… perdu !";
+        stopConfetti();
+    }
+
+    box.style.display = "block";
+    loadScores();
+}
+
+function restart() {
+    stopConfetti();
+    document.getElementById("resultBox").style.display = "none";
+    document.getElementById("cards").style.display = "block";
+}
+</script>
+
+</body>
+</html>
